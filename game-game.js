@@ -181,7 +181,7 @@ export class Game {
     if (p.hidden != null) {
       p.speedNow = 0;
       if (pr.has('interact')) this.exitHide();
-      if (pr.has('gadget0') || pr.has('gadget1')) this.emit({ t: 'msg', text: 'Leave the hiding place first.' });
+      if (pr.has('gadget0') || pr.has('gadget1') || pr.has('gadget')) this.emit({ t: 'msg', text: 'Leave the hiding place first.' });
       return;
     }
     if (pr.has('crouch')) p.crouch = !p.crouch;
@@ -234,6 +234,8 @@ export class Game {
       if (this.takedownTarget) this.beginTakedown(this.takedownTarget, p.takedownMode);
       else this.emit({ t: 'msg', text: 'Get behind an unaware guard to take them down.' });
     }
+    if (pr.has('gadgetNext')) this.cycleGadget();
+    if (pr.has('gadget')) this.useGadget(this.selectedGadget(), cmd);
     if (pr.has('gadget0')) this.useGadget(0, cmd);
     if (pr.has('gadget1')) this.useGadget(1, cmd);
     if (pr.has('ability')) this.useAbility();
@@ -254,7 +256,10 @@ export class Game {
     let kind = 'footstep';
     if (surf === 1) { r = Math.max(r, 3.6 * (p.crouch ? 0.6 : 1) * (p.ghostT > 0 ? 0.4 : 1)); kind = 'glass'; }
     else if (surf === 2) { r = Math.max(r, 3.0 * (p.crouch ? 0.6 : 1) * (p.ghostT > 0 ? 0.4 : 1)); kind = 'squeak'; }
-    this.emit({ t: 'step', surface: surf, crouch: p.crouch, run: sp > 3.2, x: p.x, y: p.y });
+    const room = this.map.room[cy * this.map.w + cx];
+    const rt = room >= 0 ? this.map.rooms[room].type : 'hall';
+    const mat = this.map.rug[cy * this.map.w + cx] ? 'soft' : (rt === 'kitchen' || rt === 'bathroom' || rt === 'laundry') ? 'tile' : (rt === 'storage' || rt === 'balcony') ? 'concrete' : rt === 'corridor' ? 'soft' : 'wood';
+    this.emit({ t: 'step', surface: surf, mat, crouch: p.crouch, run: sp > 3.2, x: p.x, y: p.y });
     this.emitNoise(p.x, p.y, r, kind, 'player');
   }
 
@@ -669,6 +674,18 @@ export class Game {
         this.emitNoise(th.x, th.y, def.noise, 'bang');
       }
     }
+  }
+  selectedGadget() {
+    const p = this.player, gs = p.gadgets;
+    let i = p.gadgetSel || 0;
+    if (!(gs[i] && gs[i].id && gs[i].count > 0) && gs[1 - i] && gs[1 - i].id && gs[1 - i].count > 0) i = p.gadgetSel = 1 - i;
+    return i;
+  }
+  cycleGadget() {
+    const p = this.player;
+    p.gadgetSel = 1 - (p.gadgetSel || 0);
+    const g = p.gadgets[p.gadgetSel];
+    this.emit({ t: 'msg', text: g && g.id && g.count > 0 ? `Gadget: ${GADGETS[g.id].name} ×${g.count}` : 'Gadget slot empty', soft: true });
   }
   cycleAbility() {
     const list = this.stats.abilities;

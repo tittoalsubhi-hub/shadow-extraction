@@ -35,14 +35,14 @@ export function populateTutorial(game) {
 }
 
 const STEPS = [
-  { id: 'move', title: 'Movement', text: 'Use the left stick (or WASD) to move. Push the stick only part-way to walk quietly; push fully to run — running is loud.', done: (g, s) => s.moved > 4 },
+  { id: 'move', title: 'Movement', text: 'Use the left stick (or WASD) to move. Push the stick only part-way to walk quietly; push fully to run — running is loud. Pinch or double-tap the view to zoom.', done: (g, s) => s.moved > 4 },
   { id: 'crouch', title: 'Crouch', text: 'Tap CROUCH. Crouching makes you quieter and harder to spot and lets low furniture hide you — but you are never invisible.', done: (g) => g.player.crouch },
-  { id: 'crate', title: 'Supplies', text: 'Open the supply crate (INTERACT). Crates hold ammo, gadgets or weapons. Weapon crates show a comparison before you swap.', done: (g, s) => s.ev.pickup || s.ev.weapon_found },
-  { id: 'door', title: 'Doors & flashlights', text: 'Ease the door open while crouched (INTERACT). Guards carry flashlights: being caught in a beam with a clear line of sight is an instant detection. Walls and closed doors block sight.', done: (g) => g.world.doors[g.map.doorAt[3 * g.map.w + 7]] !== DOOR_CLOSED },
-  { id: 'hide', title: 'Hiding', text: 'A patrol walks the hall. Step into the wardrobe beside the door (INTERACT) and wait. Guards only check hiding places if they saw you enter or are actively searching.', done: (g, s) => s.ev.hide },
-  { id: 'takedown', title: 'Takedowns', text: 'Leave the wardrobe, sneak up behind the patrol and press TAKEDOWN. The small LTH/NLT chip switches between lethal and non-lethal. Then drag the body (INTERACT) into the wardrobe.', done: (g, s) => s.ev.takedown },
+  { id: 'crate', title: 'Supplies', text: 'Open the supply crate (USE). Gadgets go on the ITEM button; ⇄ switches between your two gadgets. Crates hold ammo, gadgets or weapons. Weapon crates show a comparison before you swap.', done: (g, s) => s.ev.pickup || s.ev.weapon_found },
+  { id: 'door', title: 'Doors & flashlights', text: 'Ease the door open while crouched (USE). Guards carry flashlights: being caught in a beam with a clear line of sight is an instant detection. Walls and closed doors block sight.', done: (g) => g.world.doors[g.map.doorAt[3 * g.map.w + 7]] !== DOOR_CLOSED },
+  { id: 'hide', title: 'Hiding', text: 'A patrol walks the hall. Step into the wardrobe beside the door (USE) and wait. Guards only check hiding places if they saw you enter or are actively searching.', done: (g, s) => s.ev.hide },
+  { id: 'takedown', title: 'Takedowns', text: 'Leave the wardrobe and sneak up behind the patrol: the ATTACK button turns into a TAKEDOWN. The LETHAL chip under your weapon switches to non-lethal. Then drag the body (USE) into the wardrobe.', done: (g, s) => s.ev.takedown },
   { id: 'report', title: 'The 4-second report', text: 'A guard watches the next door. When a guard confirms you, a 4.0 s RADIO REPORT timer appears above them. Take them down or shoot them before it reaches zero. Hiding does NOT cancel a report. A finished report alerts nearby guards and puts the next apartment on heightened alert.', done: (g, s) => s.ev.report_interrupted || s.ev.report_done || g.fs.guards[1].down },
-  { id: 'hostage', title: 'Hostages', text: 'Cut the hostage free (INTERACT). Freed hostages take FOLLOW, WAIT and EVACUATE commands from the chips above your controls. Send them to the green extraction marker.', done: (g, s) => g.fs.hostages[0].state === 'evacuated' },
+  { id: 'hostage', title: 'Hostages', text: 'Cut the hostage free (USE). Freed hostages take FOLLOW, WAIT and EVACUATE commands from the chips above your controls. Send them to the green extraction marker.', done: (g, s) => g.fs.hostages[0].state === 'evacuated' },
   { id: 'extract', title: 'Secure the apartment', text: 'Stand near the extraction marker once everyone is out and no one is in combat. Each secured apartment lets you choose one of three upgrades.', done: (g, s) => s.ev.apt_complete },
 ];
 

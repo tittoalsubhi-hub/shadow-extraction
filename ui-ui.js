@@ -18,7 +18,8 @@ export class UI {
     this.screen.addEventListener('click', (e) => {
       const b = e.target.closest('[data-act]');
       if (!b || b.disabled) return;
-      this.app.audio.play('ui');
+      const a = b.dataset.act;
+      this.app.audio.play(b.classList.contains('primary') ? 'uiConfirm' : ['back', 'resume', 'quit'].includes(a) ? 'uiBack' : 'ui');
       this.app.onUiAction(b.dataset.act, b.dataset);
     });
     this.screen.addEventListener('input', (e) => { const t = e.target; if (t.dataset.set) this.app.onSetting(t.dataset.set, t.type === 'checkbox' ? t.checked : t.type === 'range' ? parseFloat(t.value) : t.value); });
@@ -31,18 +32,25 @@ export class UI {
           <div class="bar hp"><i></i><b></b></div>
           <div class="bar ar"><i></i><b></b></div>
           <div class="xp"><span class="lvl"></span><div class="xpbar"><i></i></div></div>
-          <div class="weapon"><span class="wname"></span><span class="ammo"></span><div class="rbar"><i></i></div></div>
+          <div class="weapon" data-hud="swap" title="Tap to switch weapon"><span class="wname"></span><span class="ammo"></span><div class="rbar"><i></i></div></div>
+          <div class="wrow"><button class="mini" data-hud="swap">⇆ SWAP</button><button class="mini" data-hud="reload">↻ RELOAD</button><button class="mini td" data-hud="toggleTakedownMode">LETHAL</button></div>
         </div>
         <div class="loc"><div class="where"></div><div class="alert"></div><div class="reports"></div></div>
-        <div class="tools"><button class="hbtn" data-hud="map" aria-label="Floor map">MAP</button><button class="hbtn" data-hud="pause" aria-label="Pause">❚❚</button></div>
+        <div class="tools"><div class="zoom"><button class="zb" data-zoom="-1" aria-label="Zoom out">−</button><input type="range" class="zr" min="0.6" max="1.8" step="0.02" aria-label="Zoom"><button class="zb" data-zoom="1" aria-label="Zoom in">+</button></div><button class="hbtn" data-hud="map" aria-label="Floor map">MAP</button><button class="hbtn" data-hud="pause" aria-label="Pause">❚❚</button></div>
         <div class="objectives"></div>
       </div>
       <div class="tutorial hidden"></div>
       <div class="pickup hidden"></div>
       <div class="popups"></div>`;
     for (const b of this.hud.querySelectorAll('[data-hud]')) b.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.app.onAction(b.dataset.hud); });
+    const zr = $('.zr', this.hud);
+    this.zoomInput = zr;
+    zr.addEventListener('pointerdown', (e) => e.stopPropagation());
+    zr.addEventListener('input', () => this.app.setZoom(parseFloat(zr.value), false));
+    zr.addEventListener('change', () => this.app.setZoom(parseFloat(zr.value), true));
+    for (const b of this.hud.querySelectorAll('[data-zoom]')) b.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.app.setZoom((this.app.settings.zoom || 1) * (b.dataset.zoom > 0 ? 1.15 : 1 / 1.15), true); });
     this.objEl = $('.objectives', this.hud);
-    if (window.innerHeight > window.innerWidth) this.objEl.classList.add('collapsed');
+    this.objEl.classList.add('collapsed');
     this.objEl.addEventListener('pointerdown', (e) => { e.stopPropagation(); this.objEl.classList.toggle('collapsed'); });
   }
   set(el, key, html) { if (this.cache[key] !== html) { this.cache[key] = html; el.innerHTML = html; } }
@@ -114,6 +122,19 @@ export class UI {
       this.set($('.sub', el), 'gs' + i, g && g.id && g.count > 0 ? `×${g.count}` : '');
       el.classList.toggle('empty', !(g && g.id && g.count > 0));
     }
+    {
+      const i = game.selectedGadget ? game.selectedGadget() : 0;
+      const g = p.gadgets[i];
+      const el = els.gadget;
+      this.set($('.lbl', el), 'gsel', g && g.id && g.count > 0 ? GADGETS[g.id].short : 'ITEM');
+      this.set($('.sub', el), 'gselc', g && g.id && g.count > 0 ? `×${g.count}` : 'empty');
+      el.classList.toggle('empty', !(g && g.id && g.count > 0));
+      const other = p.gadgets[1 - i];
+      this.set($('.sub', els.gnext), 'gnx', other && other.id && other.count > 0 ? GADGETS[other.id].short : '');
+    }
+    const tdBtn = $('.mini.td', this.hud);
+    if (tdBtn) { this.set(tdBtn, 'tdmini', p.takedownMode === 'lethal' ? '🗡 LETHAL' : '✋ NON-LETHAL'); tdBtn.classList.toggle('nl', p.takedownMode !== 'lethal'); }
+    if (this.zoomInput && document.activeElement !== this.zoomInput) { const z = String(settings.zoom || 1); if (this.cache.zr !== z) { this.cache.zr = z; this.zoomInput.value = z; } }
     const ab = p.ability;
     const abEl = els.ability;
     this.set($('.lbl', abEl), 'ab', ab ? ABILITIES[ab].name.split(' ').map(w => w[0]).join('') + '' : 'ABIL');
@@ -124,6 +145,7 @@ export class UI {
     this.setStyle($('.cd', abEl), 'abcd', 'background', cd > 0 ? `conic-gradient(rgba(0,0,0,0.65) ${cd / total * 360}deg, transparent 0)` : 'none');
     abEl.classList.toggle('empty', !ab);
     abEl.classList.toggle('active', active > 0);
+    abEl.classList.toggle('hidden', !ab && (settings.controlScheme || 'simple') === 'simple');
     this.set($('.lbl', els.tdmode), 'tdm', p.takedownMode === 'lethal' ? 'LTH' : 'NLT');
     els.tdmode.classList.toggle('nonlethal', p.takedownMode !== 'lethal');
     const tdOk = !!game.takedownTarget;
@@ -285,14 +307,16 @@ export class UI {
     const rg = (k, label, min, max, step) => `<label class="rg"><span>${label} <output>${typeof s[k] === 'number' ? (step < 1 ? s[k].toFixed(2) : s[k]) : ''}</output></span><input type="range" min="${min}" max="${max}" step="${step}" value="${s[k]}" data-set="${k}"></label>`;
     this.show(`<div class="panel wide settings"><h2>Settings</h2>
       <h3>Audio</h3>${rg('music', 'Music volume', 0, 1, 0.05)}${rg('sfx', 'Effects volume', 0, 1, 0.05)}
-      <h3>Feedback & display</h3>${cb('vibration', 'Vibration')}${cb('reducedShake', 'Reduced screen shake')}${rg('uiScale', 'Interface scale', 0.8, 1.4, 0.05)}${rg('zoom', 'Camera zoom', 0.7, 1.4, 0.05)}
+      <h3>Feedback & display</h3>${cb('vibration', 'Vibration')}${cb('reducedShake', 'Reduced screen shake')}${rg('uiScale', 'Interface scale', 0.8, 1.4, 0.05)}${rg('zoom', 'Camera zoom (also pinch / double-tap)', 0.6, 1.8, 0.05)}
       <label class="sel"><span>Vision cones</span><select data-set="cones"><option value="auto" ${s.cones == null ? 'selected' : ''}>Difficulty default</option><option value="on" ${s.cones === true ? 'selected' : ''}>Always show</option><option value="off" ${s.cones === false ? 'selected' : ''}>Hide</option></select></label>
       ${cb('noiseRings', 'Show noise rings')}
       <label class="sel"><span>Graphics quality</span><select data-set="quality"><option value="auto" ${s.quality === 'auto' ? 'selected' : ''}>Auto</option><option value="high" ${s.quality === 'high' ? 'selected' : ''}>High</option><option value="low" ${s.quality === 'low' ? 'selected' : ''}>Low (battery saver)</option></select></label>
       <h3>Touch controls</h3>
       <label class="sel"><span>Movement stick</span><select data-set="joystickMode"><option value="fixed" ${s.joystickMode === 'fixed' ? 'selected' : ''}>Fixed</option><option value="floating" ${s.joystickMode === 'floating' ? 'selected' : ''}>Floating (appears where you touch)</option></select></label>
       ${rg('deadzone', 'Stick dead zone', 0.02, 0.4, 0.01)}
-      ${cb('contextualAttack', 'Single contextual ATTACK button (takedown when possible, otherwise fire)')}
+      <label class="sel"><span>Control scheme</span><select data-set="controlScheme"><option value="simple" ${(s.controlScheme || 'simple') === 'simple' ? 'selected' : ''}>Simple — fewer buttons</option><option value="full" ${s.controlScheme === 'full' ? 'selected' : ''}>Full — every action has a button</option></select></label>
+      ${cb('contextualAttack', 'Full scheme: single ATTACK button instead of FIRE + TAKEDOWN')}
+      ${cb('allowPortrait', 'Allow portrait (landscape is recommended)')}
       ${cb('aimStick', 'Right-side aim stick')}
       ${cb('aimAssist', 'Assisted aiming (fire button still required)')}
       ${cb('leftHanded', 'Left-handed layout (mirror)')}

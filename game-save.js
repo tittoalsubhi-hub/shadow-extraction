@@ -11,7 +11,7 @@ function parse(s, fallback) { if (!s) return fallback; try { return JSON.parse(s
 export const DEFAULT_SETTINGS = {
   music: 0.5, sfx: 0.8, vibration: true, reducedShake: false, uiScale: 1, cones: null, noiseRings: true,
   joystickMode: 'fixed', deadzone: 0.12, contextualAttack: false, aimStick: false, aimAssist: true,
-  leftHanded: false, quality: 'auto', keybinds: {}, padbinds: {},
+  leftHanded: false, quality: 'auto', keybinds: {}, padbinds: {}, controlScheme: 'simple', allowPortrait: false, zoom: 1,
 };
 export function loadSettings() { return { ...DEFAULT_SETTINGS, ...parse(get(K.settings), {}) }; }
 export function saveSettings(s) { set(K.settings, JSON.stringify(s)); }

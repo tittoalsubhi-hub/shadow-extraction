@@ -5,7 +5,7 @@ import { DIFFICULTY, WEAPONS, REPORT_TIME } from './game-data.js';
 import { Renderer } from './render-renderer.js';
 import { screenDirToWorld } from './render-iso.js';
 import { Input } from './input-input.js';
-import { defaultLayouts, mirrorLayout } from './input-layout.js';
+import { defaultLayouts, mirrorLayout, LAYOUT_VERSION } from './input-layout.js';
 import { UI, fmtTime } from './ui-ui.js';
 import { LayoutEditor } from './ui-editor.js';
 import { Audio } from './audio-audio.js';
@@ -19,7 +19,8 @@ class App {
     this.canvas = document.getElementById('view');
     this.settings = Save.loadSettings();
     this.meta = Save.loadMeta();
-    this.layouts = Save.loadControls() || defaultLayouts();
+    const savedLayouts = Save.loadControls();
+    this.layouts = savedLayouts && savedLayouts.v === LAYOUT_VERSION ? savedLayouts : { ...defaultLayouts(), v: LAYOUT_VERSION };
     const def = defaultLayouts();
     for (const o of ['portrait', 'landscape']) { this.layouts[o] = { ...def[o], ...(this.layouts[o] || {}) }; }
     this.renderer = new Renderer(this.canvas);
@@ -35,6 +36,12 @@ class App {
     this.updateReady = false;
     this.lastTick = {};
     this.bindGlobal();
+    this.bindZoom();
+    document.getElementById('rotate').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-rot]'); if (!b) return;
+      if (b.dataset.rot === 'portrait') { this.settings.allowPortrait = true; Save.saveSettings(this.settings); this.resize(); }
+      else this.lockLandscape().then(() => this.resize());
+    });
     this.resize();
     this.showTitle();
     requestAnimationFrame((t) => this.frame(t));
@@ -71,12 +78,61 @@ class App {
     document.body.classList.toggle('lefty', !!this.settings.leftHanded);
     this.input.applyLayout(l, this.safeRect(), this.settings);
     if (this.editor.active) this.editor.onResize();
+    document.body.classList.toggle('scheme-full', this.settings.controlScheme === 'full');
+    this.updateRotateHint();
   }
-  saveLayouts() { Save.saveControls(this.layouts); }
+  saveLayouts() { this.layouts.v = LAYOUT_VERSION; Save.saveControls(this.layouts); }
   zoom() {
     const w = window.innerWidth, h = window.innerHeight;
     const base = Math.min(w, h) / 430;
     return Math.max(0.55, Math.min(1.4, base * (this.orientation() === 'portrait' ? 0.82 : 0.96))) * (this.settings.zoom || 1);
+  }
+  setZoom(z, persist) {
+    this.settings.zoom = Math.max(0.6, Math.min(1.8, Math.round(z * 100) / 100));
+    if (persist) Save.saveSettings(this.settings);
+  }
+  bindZoom() {
+    const cv = this.canvas;
+    const pts = new Map();
+    let pinch = null, lastTap = 0, lastTapPos = null;
+    cv.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'touch') return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 2) {
+        const [a, b] = [...pts.values()];
+        pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), z: this.settings.zoom || 1 };
+      } else if (pts.size === 1) {
+        const now = performance.now();
+        if (now - lastTap < 320 && lastTapPos && Math.hypot(e.clientX - lastTapPos.x, e.clientY - lastTapPos.y) < 40 && this.state === 'playing') {
+          // double tap cycles close / normal / wide
+          const z = this.settings.zoom || 1;
+          this.setZoom(z < 0.9 ? 1 : z < 1.25 ? 1.4 : 0.75, true);
+          lastTap = 0;
+        } else { lastTap = now; lastTapPos = { x: e.clientX, y: e.clientY }; }
+      }
+    });
+    cv.addEventListener('pointermove', (e) => {
+      if (!pts.has(e.pointerId)) return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch && pts.size >= 2) { const [a, b] = [...pts.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); if (pinch.d > 10) this.setZoom(pinch.z * d / pinch.d, false); }
+    });
+    const up = (e) => { if (!pts.has(e.pointerId)) return; pts.delete(e.pointerId); if (pts.size < 2 && pinch) { pinch = null; Save.saveSettings(this.settings); } };
+    cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+    cv.addEventListener('wheel', (e) => { e.preventDefault(); if (this.state !== 'playing') return; this.setZoom((this.settings.zoom || 1) * (e.deltaY > 0 ? 1 / 1.08 : 1.08), true); }, { passive: false });
+  }
+  // landscape by default: lock where the platform allows it, otherwise ask the player to rotate
+  async lockLandscape() {
+    if (this.settings.allowPortrait) return;
+    try {
+      const standalone = matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches;
+      if (!standalone && !document.fullscreenElement && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(() => { });
+      if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape').catch(() => { });
+    } catch { }
+  }
+  updateRotateHint() {
+    const el = document.getElementById('rotate');
+    const show = this.orientation() === 'portrait' && !this.settings.allowPortrait && !this.editor.active;
+    el.classList.toggle('hidden', !show);
   }
   haptic(ms) { if (this.settings.vibration && navigator.vibrate) try { navigator.vibrate(ms); } catch { } }
 
@@ -93,7 +149,7 @@ class App {
     document.addEventListener('gesturestart', (e) => e.preventDefault());
     document.addEventListener('dblclick', (e) => e.preventDefault());
     document.addEventListener('contextmenu', (e) => { if (!e.target.closest('input')) e.preventDefault(); });
-    const unlock = () => { this.audio.init(); };
+    const unlock = () => { this.audio.init(); if (!this._locked) { this._locked = true; this.lockLandscape().then(() => this.resize()); } };
     window.addEventListener('pointerdown', unlock, { capture: true });
     window.addEventListener('keydown', unlock, { capture: true });
   }
@@ -176,6 +232,7 @@ class App {
   openDebrief() { this.state = 'menu'; this.input.setEnabled(false); this.ui.debrief(this.game.run.pendingReward, this.game.run); }
 
   onAction(a) {
+    if (a === 'swap' || a === 'reload' || a === 'toggleTakedownMode') { if (this.state === 'playing') this.input.pressed.add(a); return; }
     if (a === 'pause') { if (this.state === 'playing') this.openPause(); else if (this.state === 'menu' && this.game && !this.game.run.pendingReward && !this.game.over) this.resume(); }
     else if (a === 'map') { if (this.state === 'playing') this.openMap(); else if (this.state === 'menu' && this.game && !this.game.run.pendingReward) this.resume(); }
   }
@@ -191,7 +248,7 @@ class App {
       case 'newrun': this.state = 'menu'; this.ui.newRun(this.meta, this.newRunSel); break;
       case 'pickdiff': this.newRunSel.difficulty = d.id; this.ui.newRun(this.meta, this.newRunSel); break;
       case 'picksidearm': this.newRunSel.sidearm = d.id; this.ui.newRun(this.meta, this.newRunSel); break;
-      case 'startrun': this.newRun(); break;
+      case 'startrun': this.lockLandscape(); this.newRun(); break;
       case 'restart': if (confirm('Restart this operation from the beginning? Current progress will be lost.')) this.restartRun(); break;
       case 'tutorial': this.startGame(createTutorialRun(), 'start', { tutorial: true }); break;
       case 'settings': this.settingsFrom = this.game ? 'pause' : 'title'; this.ui.settings(this.settings); break;
@@ -257,7 +314,7 @@ class App {
     this.settings[k] = v;
     Save.saveSettings(this.settings);
     if (k === 'music' || k === 'sfx') this.audio.setVolumes(this.settings.music, this.settings.sfx);
-    if (['uiScale', 'quality', 'joystickMode', 'contextualAttack', 'aimStick', 'leftHanded', 'zoom'].includes(k)) { if (k === 'quality') this.lowQ = v === 'low'; this.resize(); }
+    if (['uiScale', 'quality', 'joystickMode', 'contextualAttack', 'aimStick', 'leftHanded', 'zoom', 'controlScheme', 'allowPortrait'].includes(k)) { if (k === 'quality') this.lowQ = v === 'low'; this.resize(); }
     const out = document.querySelector(`[data-set="${k}"]`)?.closest('label')?.querySelector('output');
     if (out && typeof v === 'number') out.textContent = v < 1 && v > 0 || k === 'uiScale' || k === 'zoom' ? v.toFixed(2) : v;
   }
@@ -431,14 +488,17 @@ class App {
       this.snapCam = false;
       if (this.state === 'playing' || this.state === 'menu') {
         this.ui.updateHud(g, { objectives: obj.list });
-        this.ui.updateControlsHud(g, this.input.els, s);
+        if (!this.editor.active) this.ui.updateControlsHud(g, this.input.els, s);
       }
+      this.audio.setMode(this.state === 'playing' || (this.state === 'menu' && !g.over) ? 'game' : 'menu');
       const al = g.alertLevel();
       const nearG = g.fs.guards.filter(q => !q.down && dist(q.x, q.y, g.player.x, g.player.y) < 9).length;
       this.audio.update(dt, { calm: 0, suspicious: 1, searching: 2, combat: 3 }[al.level], nearG);
     } else {
       // title backdrop
       const ctx = this.renderer.ctx; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#08080a'; ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+      this.audio.setMode('menu');
+      this.audio.update(dt, 0, 0);
     }
     this.perfMonitor(dt);
   }

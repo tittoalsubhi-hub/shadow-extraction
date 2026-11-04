@@ -1,9 +1,9 @@
 // Touch (multi-pointer), keyboard/mouse and gamepad input → screen-space command snapshot.
-import { CONTROL_DEFS, CONTROL_IDS } from './input-layout.js';
+import { CONTROL_DEFS, CONTROL_IDS, controlVisible } from './input-layout.js';
 
-export const ACTIONS = ['fire', 'takedown', 'toggleTakedownMode', 'interact', 'crouch', 'reload', 'swap', 'gadget0', 'gadget1', 'ability', 'abilityNext', 'follow', 'wait', 'evacuate', 'map', 'pause', 'run'];
-export const ACTION_LABELS = { up: 'Move up', down: 'Move down', left: 'Move left', right: 'Move right', fire: 'Fire', takedown: 'Takedown', toggleTakedownMode: 'Lethal / non-lethal', interact: 'Interact / hide', crouch: 'Crouch', reload: 'Reload', swap: 'Switch weapon', gadget0: 'Gadget 1', gadget1: 'Gadget 2', ability: 'Use ability', abilityNext: 'Cycle ability', follow: 'Hostages: follow', wait: 'Hostages: wait', evacuate: 'Hostages: evacuate', map: 'Floor map', pause: 'Pause', run: 'Run (hold)' };
-export const DEFAULT_KEYS = { up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'], fire: ['Space'], takedown: ['KeyF'], toggleTakedownMode: ['KeyV'], interact: ['KeyE'], crouch: ['KeyC', 'ControlLeft'], reload: ['KeyR'], swap: ['KeyQ'], gadget0: ['Digit1'], gadget1: ['Digit2'], ability: ['KeyX'], abilityNext: ['KeyZ'], follow: ['KeyT'], wait: ['KeyG'], evacuate: ['KeyB'], map: ['KeyM', 'Tab'], pause: ['Escape', 'KeyP'], run: ['ShiftLeft', 'ShiftRight'] };
+export const ACTIONS = ['gadget', 'gadgetNext', 'fire', 'takedown', 'toggleTakedownMode', 'interact', 'crouch', 'reload', 'swap', 'gadget0', 'gadget1', 'ability', 'abilityNext', 'follow', 'wait', 'evacuate', 'map', 'pause', 'run'];
+export const ACTION_LABELS = { up: 'Move up', down: 'Move down', left: 'Move left', right: 'Move right', fire: 'Fire', takedown: 'Takedown', toggleTakedownMode: 'Lethal / non-lethal', interact: 'Interact / hide', crouch: 'Crouch', reload: 'Reload', swap: 'Switch weapon', gadget0: 'Gadget 1', gadget1: 'Gadget 2', gadget: 'Use selected gadget', gadgetNext: 'Next gadget', ability: 'Use ability', abilityNext: 'Cycle ability', follow: 'Hostages: follow', wait: 'Hostages: wait', evacuate: 'Hostages: evacuate', map: 'Floor map', pause: 'Pause', run: 'Run (hold)' };
+export const DEFAULT_KEYS = { up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'], fire: ['Space'], takedown: ['KeyF'], toggleTakedownMode: ['KeyV'], interact: ['KeyE'], crouch: ['KeyC', 'ControlLeft'], reload: ['KeyR'], swap: ['KeyQ'], gadget0: ['Digit1'], gadget1: ['Digit2'], gadget: ['KeyH'], gadgetNext: ['KeyJ'], ability: ['KeyX'], abilityNext: ['KeyZ'], follow: ['KeyT'], wait: ['KeyG'], evacuate: ['KeyB'], map: ['KeyM', 'Tab'], pause: ['Escape', 'KeyP'], run: ['ShiftLeft', 'ShiftRight'] };
 // standard gamepad mapping indices
 export const DEFAULT_PAD = { fire: 7, gadget1: 6, interact: 0, crouch: 1, reload: 2, swap: 3, takedown: 5, gadget0: 4, follow: 12, wait: 14, evacuate: 15, ability: 13, pause: 9, map: 8, toggleTakedownMode: 11, abilityNext: 10 };
 
@@ -155,12 +155,13 @@ export class Input {
       this.keysDown.delete(a); this.held.delete(a);
     });
     const cv = this.opts.canvas;
-    cv.addEventListener('mousemove', (e) => { this.mouse.x = e.clientX; this.mouse.y = e.clientY; this.mouse.active = true; this.mouse.t = performance.now(); this.lastSource = 'keyboard'; });
-    cv.addEventListener('mousedown', (e) => { if (e.pointerType === 'touch') return; if (!this.enabled) return; this.mouse.active = true; this.mouse.x = e.clientX; this.mouse.y = e.clientY; if (e.button === 0) { this.pressed.add('fire'); this.held.add('fire'); this.mouse.down = true; } else if (e.button === 2) { this.pressed.add('takedown'); } });
+    cv.addEventListener('mousemove', (e) => { if (performance.now() - (this.lastTouchT || 0) < 900) return; this.mouse.x = e.clientX; this.mouse.y = e.clientY; this.mouse.active = true; this.mouse.t = performance.now(); this.lastSource = 'keyboard'; });
+    cv.addEventListener('mousedown', (e) => { if (performance.now() - (this.lastTouchT || 0) < 900) return; if (!this.enabled) return; this.mouse.active = true; this.mouse.x = e.clientX; this.mouse.y = e.clientY; if (e.button === 0) { this.pressed.add('fire'); this.held.add('fire'); this.mouse.down = true; } else if (e.button === 2) { this.pressed.add('takedown'); } });
     window.addEventListener('mouseup', (e) => { if (e.button === 0 && this.mouse.down) { this.mouse.down = false; this.held.delete('fire'); } });
     cv.addEventListener('contextmenu', (e) => e.preventDefault());
     cv.addEventListener('mouseleave', () => { this.mouse.active = false; });
-    cv.addEventListener('touchstart', () => { this.mouse.active = false; }, { passive: true });
+    cv.addEventListener('touchstart', () => { this.mouse.active = false; this.lastTouchT = performance.now(); }, { passive: true });
+    window.addEventListener('touchstart', () => { this.lastTouchT = performance.now(); }, { passive: true, capture: true });
   }
   refreshBindings() { this.km = this.keyMap(); }
 
@@ -227,10 +228,7 @@ export class Input {
     for (const id of CONTROL_IDS) {
       const def = CONTROL_DEFS[id], el = this.els[id], c = layout[id];
       if (!c) continue;
-      let show = true;
-      if (def.optional && !settings[def.optional]) show = false;
-      if (def.showIf && !settings[def.showIf]) show = false;
-      if (def.hideIf && settings[def.hideIf]) show = false;
+      const show = controlVisible(id, settings);
       el.style.display = show ? '' : 'none';
       const size = def.base * c.s * unit;
       el.style.left = (safe.l + c.x * W) + 'px';

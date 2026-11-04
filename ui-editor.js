@@ -1,8 +1,8 @@
 // Edit Control Layout: drag, resize and set opacity of each touch control; separate portrait/landscape layouts.
-import { CONTROL_DEFS, CONTROL_IDS, defaultLayouts, mirrorLayout } from './input-layout.js';
+import { CONTROL_DEFS, CONTROL_IDS, defaultLayouts, mirrorLayout, controlVisible } from './input-layout.js';
 
 export class LayoutEditor {
-  constructor(app) { this.app = app; this.active = false; this.sel = 'stick'; this.preview = false; }
+  constructor(app) { this.app = app; this.active = false; this.sel = 'stick'; this.preview = false; this.visible = null; }
   open() {
     const app = this.app;
     this.active = true;
@@ -45,15 +45,15 @@ export class LayoutEditor {
   apply() {
     const app = this.app;
     const safe = app.safeRect();
-    const s = { ...app.settings, aimStick: true, contextualAttack: false };
+    const s = { ...app.settings, aimStick: true };
     app.input.applyLayout(this.work, safe, s);
-    // show all for editing, including optional ones
-    for (const id of CONTROL_IDS) { const el = app.input.els[id]; el.style.display = ''; el.classList.toggle('selected', id === this.sel); }
-    app.input.els.attack.style.display = 'none';
+    // show every control of the current scheme (including the optional aim stick)
+    this.visible = CONTROL_IDS.filter(id => controlVisible(id, s));
+    for (const id of CONTROL_IDS) { const el = app.input.els[id]; el.style.display = this.visible.includes(id) ? '' : 'none'; el.classList.remove('hidden'); el.classList.toggle('selected', id === this.sel); }
     this.markOverlaps();
   }
   markOverlaps() {
-    const els = CONTROL_IDS.filter(id => id !== 'attack').map(id => [id, this.app.input.els[id].getBoundingClientRect()]);
+    const els = (this.visible || CONTROL_IDS).map(id => [id, this.app.input.els[id].getBoundingClientRect()]);
     const hud = document.querySelector('.hud-top')?.getBoundingClientRect();
     for (const [id, r] of els) {
       let bad = false;
